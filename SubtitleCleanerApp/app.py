@@ -19,7 +19,7 @@ if uploaded_file:
     df_new["subtitle_text_split"] = df_new["subtitle_text_split"].str.strip()
 
     # --- Extract speaker (capitalised word ending with colon) ---
-    df_new["Character"] = df_new["subtitle_text_split"].str.extract(r"^([A-Z][a-zA-Z]+):")
+    df_new["Character"] = df_new["subtitle_text_split"].str.extract(r"^([A-Z][A-Z0-9\s\.]+):")
     df_new["Character"] = df_new["Character"].ffill()
 
     # --- Add row index ---
