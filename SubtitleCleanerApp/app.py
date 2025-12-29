@@ -10,6 +10,34 @@ st.write("Upload an Excel file. The app will clean, rebuild full sentences, and 
 # --- File upload ---
 uploaded_file = st.file_uploader("Choose an Excel file (.xlsx)", type="xlsx")
 
+# --- Function to convert to SRT ---
+def format_srt_time(ts):
+    """
+    ts: string or pandas Timestamp in 'hh:mm:ss,fff' or 'hh:mm:ss.sss' format
+    Returns string in 'hh:mm:ss,fff' for SRT
+    """
+    if isinstance(ts, str):
+        # Replace ',' with '.' if needed
+        ts = ts.replace(',', '.')
+        # Split into hours, minutes, seconds
+        h, m, s = ts.split(':')
+        if '.' in s:
+            sec, ms = s.split('.')
+            ms = ms.ljust(3, '0')  # pad milliseconds
+        else:
+            sec = s
+            ms = '000'
+        return f"{h.zfill(2)}:{m.zfill(2)}:{sec.zfill(2)},{ms}"
+    else:
+        # If numeric type, assume seconds
+        total_ms = int(ts * 1000)
+        hours = total_ms // 3600000
+        minutes = (total_ms % 3600000) // 60000
+        seconds = (total_ms % 60000) // 1000
+        milliseconds = total_ms % 1000
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
+
+
 if uploaded_file:
     # Read Excel
     df = pd.read_excel(uploaded_file)
@@ -134,7 +162,7 @@ if uploaded_file:
         df_final = df_final.drop(columns='merge_group')
 
         # --- Add row count ---
-        df_final["Row Count"] = range(1, len(df_final) + 1)
+        df_final["Index"] = range(1, len(df_final) + 1)
 
         # --- Add word count ---
         df_final["Word Count"] = df_final["Subtitle Text"].str.replace(
@@ -143,7 +171,7 @@ if uploaded_file:
 
         # --- Reorder fields ---
         df_final = df_final[
-            ["Row Count", "Character", "Subtitle Text", "Start Time", "End Time", "Duration", "Word Count"]
+            ["Index", "Character", "Subtitle Text", "Start Time", "End Time", "Duration", "Word Count"]
         ]
 
         st.success("Subtitles processed successfully!")
@@ -164,3 +192,24 @@ if uploaded_file:
             file_name=output_name,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+        # --- Generate SRT dataframe
+        srt_df = pd.DataFrame({
+            "index": range(1, len(df_final) + 1),
+            "type": "cue",
+            "start": df_final["Start Time"].apply(format_srt_time),
+            "end": df_final["End Time"].apply(format_srt_time),
+            "text": df_final["Subtitle Text"]
+        })
+
+        # Prepare downloadable srt
+        srt_file = f"{base_name}-processed.srt"
+        srt_df.to_csv(srt_file, index=False, sep='\t', encoding='utf-8')
+
+        with open(srt_file, "rb") as f:
+            st.download_button(
+                label="Download SRT file",
+                data=f,
+                file_name=srt_file,
+                mime="text/plain"
+            )
