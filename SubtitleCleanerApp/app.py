@@ -196,9 +196,9 @@ if uploaded_file is not None:
         start = format_srt_time(row._4)  # Start Time
         end = format_srt_time(row._5)  # End Time
         text = row._3  # Subtitle Text
-        srt_lines.append(f"{i}\n{start} --> {end}\n{text}\n")
+        srt_lines.append(f"{i}\n{start} --> {end}\n{text}\n\n")
 
-    srt_file_name = f"{base_name}-processed.srt"
+    srt_file_name = f"{base_name}.srt"
     with open(srt_file_name, "w", encoding="utf-8") as f:
         f.writelines(srt_lines)
 
