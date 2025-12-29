@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import re
+import os
 
 # --- Page title ---
 st.title("Script Converter")
@@ -20,7 +21,7 @@ if uploaded_file:
 
     # --- Extract speaker (capitalised word ending with colon) ---
     df_new["Character"] = df_new["subtitle_text_split"].str.extract(
-        r"^(([A-Z][a-zA-Z]*)(?:\s+[A-Z][a-zA-Z]*)*):"
+        r"^([A-Z][a-zA-Z0-9]*(?:\s+[A-Z][a-zA-Z0-9]*)*):"
     )
     df_new["Character"] = df_new["Character"].ffill()
 
@@ -39,7 +40,11 @@ if uploaded_file:
         .str.replace('"', "", regex=False)
         .str.replace("\r", "", regex=False)
         .str.strip()
-        .str.replace(r"^[A-Z][a-zA-Z]+:\s*", "", regex=True)
+        .str.replace(
+        r"^([A-Z][a-zA-Z0-9]*(?:\s+[A-Z][a-zA-Z0-9]*)*):",
+        "",
+        regex=True
+        )
     )
 
     # --- Regex to identify end of sentence ---
@@ -109,10 +114,34 @@ if uploaded_file:
             .reset_index(drop=True)
         )
 
+        # --- Group by to reduce lines ---
+        df_final["_order"] = df_final.index
+        df_final = (
+            df_final
+            .groupby(
+                ["Character", "Start Time", "End Time", "Duration"],
+                as_index=False,
+                sort=False  # VERY important
+            )
+            .agg({
+                "Subtitle Text": lambda x: " ".join(x),
+                "_order": "first"
+            })
+        )
+        df_final = df_final.sort_values("_order").drop(columns="_order").reset_index(drop=True)
+
+        # --- Add row count ---
+        df_final["Row Count"] = range(1, len(df_final) + 1)
+
         # --- Add word count ---
         df_final["Word Count"] = df_final["Subtitle Text"].str.replace(
             r"^[A-Z][a-zA-Z]+:\s*", "", regex=True
         ).str.split().str.len()
+
+        # --- Reorder fields ---
+        df_final = df_final[
+            ["Row Count", "Character", "Subtitle Text", "Start Time", "End Time", "Duration", "Word Count"]
+        ]
 
         st.success("Subtitles processed successfully!")
 
@@ -121,12 +150,14 @@ if uploaded_file:
         st.dataframe(df_final.head(10))
 
         # --- Prepare downloadable Excel ---
-        output_file = "Cleaned_Subtitles.xlsx"
-        df_final.to_excel(output_file, index=False)
+        input_name = uploaded_file.name
+        base_name, ext = os.path.splitext(input_name)
+        output_name = f"{base_name}-processed{ext}"
+        df_final.to_excel(output_name, index=False)
 
         st.download_button(
             label="Download Cleaned Excel",
-            data=open(output_file, "rb").read(),
-            file_name=output_file,
+            data=open(output_name, "rb").read(),
+            file_name=output_name,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
