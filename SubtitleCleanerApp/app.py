@@ -115,20 +115,23 @@ if uploaded_file:
         )
 
         # --- Group by to reduce lines ---
-        df_final["_order"] = df_final.index
+        # Create a group identifier for consecutive runs of same character + timestamp
+        df_final['merge_group'] = (
+                (df_final['Character'] != df_final['Character'].shift()) |
+                (df_final['Start Time'] != df_final['Start Time'].shift())
+        ).cumsum()
         df_final = (
             df_final
-            .groupby(
-                ["Character", "Start Time", "End Time", "Duration"],
-                as_index=False,
-                sort=False  # VERY important
-            )
+            .groupby('merge_group', as_index=False, sort=False)
             .agg({
-                "Subtitle Text": lambda x: " ".join(x),
-                "_order": "first"
+                'Character': 'first',
+                'Subtitle Text': lambda x: ' '.join(x),
+                'Start Time': 'first',
+                'End Time': 'last',
+                'Duration': 'first'  # or recalc if needed
             })
         )
-        df_final = df_final.sort_values("_order").drop(columns="_order").reset_index(drop=True)
+        df_final = df_final.drop(columns='merge_group')
 
         # --- Add row count ---
         df_final["Row Count"] = range(1, len(df_final) + 1)
