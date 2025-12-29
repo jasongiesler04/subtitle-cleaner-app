@@ -189,7 +189,7 @@ if uploaded_file is not None:
             return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
 
 
-    srt_df = df_final.sort_values(by=["Start Time", "Row Count"], ascending=[True, False])
+    srt_df = df_final.sort_values(by=["Start Time", "Index"], ascending=[True, False])
 
     srt_lines = []
     for i, row in enumerate(srt_df.itertuples(), 1):
