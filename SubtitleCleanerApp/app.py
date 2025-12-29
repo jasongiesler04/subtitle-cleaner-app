@@ -131,12 +131,12 @@ if uploaded_file is not None:
         # -------------------------------
         # 4. Add row count
         # -------------------------------
-        df_final["Row Count"] = range(1, len(df_final) + 1)
+        df_final["Index"] = range(1, len(df_final) + 1)
 
         # -------------------------------
         # 5. Reorder columns
         # -------------------------------
-        columns_order = ["Row Count", "Character", "Subtitle Text", "Start Time", "End Time", "Duration"]
+        columns_order = ["Index", "Character", "Subtitle Text", "Start Time", "End Time", "Duration"]
         df_final = df_final[columns_order]
 
         # -------------------------------
@@ -154,7 +154,7 @@ if uploaded_file is not None:
 
     # --- Show preview ---
     st.write("Preview of cleaned subtitles:")
-    st.dataframe(df_final.head(10))
+    st.dataframe(df_final.set_index("Index").head(10))
 
     # -------------------------------
     # 6. Prepare Excel download
@@ -176,15 +176,10 @@ if uploaded_file is not None:
     # -------------------------------
     def format_srt_time(ts):
         if isinstance(ts, str):
-            ts = ts.replace(',', '.')
-            h, m, s = ts.split(':')
-            if '.' in s:
-                sec, ms = s.split('.')
-                ms = ms.ljust(3, '0')
-            else:
-                sec = s
-                ms = '000'
-            return f"{h.zfill(2)}:{m.zfill(2)}:{sec.zfill(2)},{ms}"
+            ts = ts.replace('.', ',')
+            if ',' not in ts:
+                ts += ',000'
+            return ts
         else:
             total_ms = int(ts * 1000)
             hours = total_ms // 3600000
@@ -193,16 +188,19 @@ if uploaded_file is not None:
             milliseconds = total_ms % 1000
             return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
 
-    srt_df = pd.DataFrame({
-        "index": range(1, len(df_final)+1),
-        "type": "cue",
-        "start": df_final["Start Time"].apply(format_srt_time),
-        "end": df_final["End Time"].apply(format_srt_time),
-        "text": df_final["Subtitle Text"]
-    })
 
-    srt_file_name = f"{base_name}srt"
-    srt_df.to_csv(srt_file_name, index=False, sep="\t", encoding="utf-8")
+    srt_df = df_final.sort_values(by=["Start Time", "Row Count"], ascending=[True, False])
+
+    srt_lines = []
+    for i, row in enumerate(srt_df.itertuples(), 1):
+        start = format_srt_time(row._4)  # Start Time
+        end = format_srt_time(row._5)  # End Time
+        text = row._3  # Subtitle Text
+        srt_lines.append(f"{i}\n{start} --> {end}\n{text}\n")
+
+    srt_file_name = f"{base_name}-processed.srt"
+    with open(srt_file_name, "w", encoding="utf-8") as f:
+        f.writelines(srt_lines)
 
     with open(srt_file_name, "rb") as f:
         srt_data = f.read()
