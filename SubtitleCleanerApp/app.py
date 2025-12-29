@@ -3,8 +3,8 @@ import pandas as pd
 import re
 
 # --- Page title ---
-st.title("Subtitle Cleaner & Sentence Rebuilder")
-st.write("Upload an Excel file with subtitles. The app will clean, rebuild full sentences, and provide a downloadable Excel.")
+st.title("Script Converter")
+st.write("Upload an Excel file. The app will clean, rebuild full sentences, and provide a downloadable Excel file.\nThe Excel file must include 'Start Time', 'End Time', 'Duration' and 'Subtitle Text' columns.")
 
 # --- File upload ---
 uploaded_file = st.file_uploader("Choose an Excel file (.xlsx)", type="xlsx")
@@ -19,7 +19,9 @@ if uploaded_file:
     df_new["subtitle_text_split"] = df_new["subtitle_text_split"].str.strip()
 
     # --- Extract speaker (capitalised word ending with colon) ---
-    df_new["Character"] = df_new["subtitle_text_split"].str.extract(r"^([A-Z][A-Z0-9\s\.]+):")
+    df_new["Character"] = df_new["subtitle_text_split"].str.extract(
+        r"^(([A-Z][a-zA-Z]*)(?:\s+[A-Z][a-zA-Z]*)*):"
+    )
     df_new["Character"] = df_new["Character"].ffill()
 
     # --- Add row index ---
