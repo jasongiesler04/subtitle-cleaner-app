@@ -7,6 +7,13 @@ import os
 st.title("Script Converter")
 st.write("Upload an Excel file. The app will clean, rebuild full sentences, and provide a downloadable Excel file.\nThe Excel file must include 'Start Time', 'End Time', 'Duration' and 'Subtitle Text' columns.")
 
+# -------------------------------------------------
+# Regex patterns
+# -------------------------------------------------
+SPEAKER_REGEX = r"([A-Z][a-zA-Z0-9]*(?:\s+[A-Z][a-zA-Z0-9]*)*):"
+SENTENCE_SPLIT_REGEX = r'(?:\n|(?<=[.!?])\s+)'
+SENTENCE_REGEX = re.compile(r".*?[.!?](?:['\"\)\]]*)(?=\s|$)")
+
 # -------------------------------
 # Upload Excel
 # -------------------------------
@@ -23,14 +30,21 @@ if uploaded_file is not None:
         # -------------------------------
         # 1. Split lines and clean text
         # -------------------------------
+        # Split new line
         df["subtitle_text_split"] = df["Subtitle Text"].str.split("\n")
         df_new = df.explode("subtitle_text_split")
+
+        # Split sentences
+        df_new["subtitle_text_split"] = df_new["subtitle_text_split"].str.split(SENTENCE_SPLIT_REGEX)
+        df_new = df_new.explode("subtitle_text_split")
+
+        # Clean new sentence text
         df_new["subtitle_text_split"] = df_new["subtitle_text_split"].str.strip()
+        df_new = df_new[df_new["subtitle_text_split"].notna() &
+                        df_new["subtitle_text_split"].ne("")]
 
         # Extract speaker (allow multi-word like 'Man VO')
-        df_new["Character"] = df_new["subtitle_text_split"].str.extract(
-            r"^([A-Z][a-zA-Z0-9]*(?:\s+[A-Z][a-zA-Z0-9]*)*):"
-        )
+        df_new["Character"] = df_new["subtitle_text_split"].str.extract(SPEAKER_REGEX)
         df_new["Character"] = df_new["Character"].ffill()
 
         # Clean subtitle text
@@ -40,14 +54,12 @@ if uploaded_file is not None:
             .str.replace('"', "", regex=False)
             .str.replace("\r", "", regex=False)
             .str.strip()
-            .str.replace(r"^([A-Z][a-zA-Z0-9]*(?:\s+[A-Z][a-zA-Z0-9]*)*):", "", regex=True)
+            .str.replace(SPEAKER_REGEX, "", regex=True)
         )
 
         # -------------------------------
         # 2. Sentence reconstruction
         # -------------------------------
-        SENTENCE_REGEX = re.compile(r".*?[.!?](?:['\"\)\]]*)(?=\s|$)")
-
         def rebuild_block(block):
             rows = []
             buffer = ""
@@ -129,14 +141,18 @@ if uploaded_file is not None:
         ).drop(columns='merge_group')
 
         # -------------------------------
-        # 4. Add row count
+        # 4. Add row count and word count
         # -------------------------------
         df_final["Index"] = range(1, len(df_final) + 1)
+
+        df_final["Word Count"] = df_final["Subtitle Text"].str.replace(
+            r"^[A-Z][a-zA-Z]+:\s*", "", regex=True
+        ).str.split().str.len()
 
         # -------------------------------
         # 5. Reorder columns
         # -------------------------------
-        columns_order = ["Index", "Character", "Subtitle Text", "Start Time", "End Time", "Duration"]
+        columns_order = ["Index", "Character", "Subtitle Text", "Start Time", "End Time", "Duration", "Word Count"]
         df_final = df_final[columns_order]
 
         # -------------------------------
