@@ -73,6 +73,8 @@ if uploaded_file is not None:
 
                 if buffer == "":
                     sentence_start_time = row["Start Time"]
+                    sentence_end_time = row["End Time"]
+                    sentence_duration = row["Duration"]
 
                 buffer += (" " if buffer else "") + text
 
@@ -90,8 +92,8 @@ if uploaded_file is not None:
                         "Character": row["Character"],
                         "Subtitle Text": sentence,
                         "Start Time": sentence_start_time,
-                        "End Time": row["End Time"],
-                        "Duration": row["Duration"],
+                        "End Time": sentence_end_time,
+                        "Duration": sentence_duration,
                     })
 
                     buffer = buffer[len(match.group()):].strip()
@@ -107,8 +109,8 @@ if uploaded_file is not None:
                     "Character": block.iloc[0]["Character"],
                     "Subtitle Text": sentence,
                     "Start Time": sentence_start_time,
-                    "End Time": block.iloc[-1]["End Time"],
-                    "Duration": block.iloc[-1]["Duration"],
+                    "End Time": sentence_end_time,
+                    "Duration": sentence_duration,
                 })
 
             return pd.DataFrame(rows)
