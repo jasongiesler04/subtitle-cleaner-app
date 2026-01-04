@@ -27,6 +27,9 @@ if uploaded_file is not None:
         input_name = uploaded_file.name
         base_name, ext = os.path.splitext(input_name)
 
+        # Preserve original subtitle row identity
+        df["orig_row_id"] = df.index
+
         # -------------------------------
         # 1. Split lines and clean text
         # -------------------------------
@@ -37,6 +40,11 @@ if uploaded_file is not None:
         # Split sentences
         df_new["subtitle_text_split"] = df_new["subtitle_text_split"].str.split(SENTENCE_SPLIT_REGEX)
         df_new = df_new.explode("subtitle_text_split")
+
+        # Mark last fragment of original subtitle row
+        df_new["is_last_fragment"] = (
+                df_new.groupby("orig_row_id").cumcount(ascending=False) == 0
+        )
 
         # Clean new sentence text
         df_new["subtitle_text_split"] = df_new["subtitle_text_split"].str.strip()
@@ -74,7 +82,7 @@ if uploaded_file is not None:
                 if buffer == "":
                     sentence_start_time = row["Start Time"]
                     sentence_end_time = row["End Time"]
-                    sentence_duration = row["Duration"]
+                    last_end_time = row["End Time"]  # track latest possible end time
 
                 buffer += (" " if buffer else "") + text
 
@@ -88,12 +96,17 @@ if uploaded_file is not None:
                         sentence = f"{row['Character']}: {sentence}"
                         speaker_written = True
 
+                    # If this row is the last fragment AND the sentence consumed all its text,
+                    # then use this row's end time instead of the earlier one.
+                    row_fully_consumed = match.group().endswith(text) and row["is_last_fragment"]
+
+                    end_time = row["End Time"] if row_fully_consumed else sentence_end_time
+
                     rows.append({
                         "Character": row["Character"],
                         "Subtitle Text": sentence,
                         "Start Time": sentence_start_time,
-                        "End Time": sentence_end_time,
-                        "Duration": sentence_duration,
+                        "End Time": end_time,
                     })
 
                     buffer = buffer[len(match.group()):].strip()
@@ -109,8 +122,7 @@ if uploaded_file is not None:
                     "Character": block.iloc[0]["Character"],
                     "Subtitle Text": sentence,
                     "Start Time": sentence_start_time,
-                    "End Time": sentence_end_time,
-                    "Duration": sentence_duration,
+                    "End Time": last_end_time,
                 })
 
             return pd.DataFrame(rows)
@@ -138,12 +150,43 @@ if uploaded_file is not None:
                 'Subtitle Text': lambda x: ' '.join(x),
                 'Start Time': 'first',
                 'End Time': 'last',
-                'Duration': 'first'
             })
         ).drop(columns='merge_group')
 
         # -------------------------------
-        # 4. Add row count and word count
+        # 4. Recalculate Duration
+        # -------------------------------
+        def time_to_ms(ts):
+            if isinstance(ts, str):
+                h, m, rest = ts.split(":")
+                s, ms = rest.split(",")
+                return (
+                        int(h) * 3600000 +
+                        int(m) * 60000 +
+                        int(s) * 1000 +
+                        int(ms)
+                )
+            return int(ts * 1000)
+
+
+        def ms_to_time(ms):
+            h = ms // 3600000
+            m = (ms % 3600000) // 60000
+            s = (ms % 60000) // 1000
+            ms = ms % 1000
+            return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+
+        df_final["Duration (ms)"] = (
+                df_final["End Time"].apply(time_to_ms)
+                - df_final["Start Time"].apply(time_to_ms)
+        )
+
+        df_final["Duration"] = df_final["Duration (ms)"].apply(ms_to_time)
+        df_final = df_final.drop(columns="Duration (ms)")
+
+        # -------------------------------
+        # 5. Add row count and word count
         # -------------------------------
         df_final["Index"] = range(1, len(df_final) + 1)
 
@@ -152,7 +195,7 @@ if uploaded_file is not None:
         ).str.split().str.len()
 
         # -------------------------------
-        # 5. Reorder columns
+        # 6. Reorder columns
         # -------------------------------
         columns_order = ["Index", "Character", "Subtitle Text", "Start Time", "End Time", "Duration", "Word Count"]
         df_final = df_final[columns_order]
@@ -175,7 +218,7 @@ if uploaded_file is not None:
     st.dataframe(df_final.set_index("Index").head(10))
 
     # -------------------------------
-    # 6. Prepare Excel download
+    # 7. Prepare Excel download
     # -------------------------------
     excel_file_name = f"{base_name}-processed.xlsx"
     df_final.to_excel(excel_file_name, index=False, engine="openpyxl")
@@ -190,7 +233,7 @@ if uploaded_file is not None:
     )
 
     # -------------------------------
-    # 7. Prepare SRT download
+    # 8. Prepare SRT download
     # -------------------------------
     def format_srt_time(ts):
         if isinstance(ts, str):
@@ -207,12 +250,18 @@ if uploaded_file is not None:
             return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
 
 
-    srt_df = df_final.sort_values(by=["Start Time", "Index"], ascending=[True, False])
+    # Group by identical timestamps and join text with newline
+    srt_groups = (
+        df_final
+        .groupby(["Start Time", "End Time"], sort=True)
+        .agg({"Subtitle Text": lambda x: "\n".join(x)})
+        .reset_index()
+    )
 
     srt_lines = []
-    for i, row in enumerate(srt_df.itertuples(), 1):
-        start = format_srt_time(row._4)  # Start Time
-        end = format_srt_time(row._5)  # End Time
+    for i, row in enumerate(srt_groups.itertuples(), 1):
+        start = format_srt_time(row._1)  # Start Time
+        end = format_srt_time(row._2)  # End Time
         text = row._3  # Subtitle Text
         srt_lines.append(f"{i}\n{start} --> {end}\n{text}\n\n")
 
