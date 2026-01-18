@@ -293,7 +293,7 @@ with tab2:
     # -------------------------------------------------
     # Regex patterns
     # -------------------------------------------------
-    SPEAKER_REGEX = r"([A-Z][a-zA-Z0-9]*(?:\s+[A-Z][a-zA-Z0-9]*)*):"
+    SPEAKER_REGEX = r"^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß0-9]*(?:\s+[A-ZÄÖÜ][A-Za-zÄÖÜäöüß0-9]*)*:"
 
     # -------------------------------
     # Upload Excel
@@ -312,14 +312,14 @@ with tab2:
 
             # Remove speaker name from text
             df_new["clean_text"] = (
-                df_new["Untertiteltext"]
+                df_new[df_new.columns[2]]
                 .str.replace(SPEAKER_REGEX, "", regex=True)
             )
 
             # -------------------------------
             # Add new word count
             # -------------------------------
-            df_new["Wortanzahl"] = df_new["clean_text"].str.replace(
+            df_new[df_new.columns[6]] = df_new["clean_text"].str.replace(
                 r"^[A-Z][a-zA-Z]+:\s*", "", regex=True
             ).str.split().str.len()
 
