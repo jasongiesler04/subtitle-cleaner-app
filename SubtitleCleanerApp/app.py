@@ -20,11 +20,28 @@ with tab1:
     SENTENCE_SPLIT_REGEX = r'(?:\n|(?<=[.!?])\s+)'
     SENTENCE_REGEX = re.compile(r".*?[.!?](?:['\"\)\]]*)(?=\s|$)")
 
+    # -------------------------------------------------
+    # Non-character terms
+    # -------------------------------------------------
+    BLOCKED_SPEAKERS = {
+        "whispers",
+        "sings",
+        "remember",
+        "raps",
+        "impersonating",
+        "distorted",
+    }
+
     # -------------------------------
     # Upload Excel
     # -------------------------------
     uploaded_file = st.file_uploader("Upload Raw Excel subtitle file", type=["xlsx"])
     if uploaded_file is not None:
+        # Reset state when a new file is uploaded
+        if "last_uploaded_name" not in st.session_state or \
+                st.session_state.last_uploaded_name != uploaded_file.name:
+            st.session_state.clear()
+            st.session_state.last_uploaded_name = uploaded_file.name
 
         # Only process once and store in session_state
         if "df_final" not in st.session_state:
@@ -57,9 +74,47 @@ with tab1:
             df_new = df_new[df_new["subtitle_text_split"].notna() &
                             df_new["subtitle_text_split"].ne("")]
 
-            # Extract speaker (allow multi-word like 'Man VO')
+            # Extract speaker
             df_new["Character"] = df_new["subtitle_text_split"].str.extract(SPEAKER_REGEX)
+
+            # Clean extracted speaker names
+            df_new["Character"] = (
+                df_new["Character"]
+                .str.replace(":", "", regex=False)
+                .str.strip()
+            )
+
+            # Apply blocklist: remove characters that match blocked words
+            df_new["Character"] = df_new["Character"].apply(
+                lambda x: None if isinstance(x, str) and x.lower() in BLOCKED_SPEAKERS else x
+            )
+
+            # Forward-fill speakers
             df_new["Character"] = df_new["Character"].ffill()
+
+            # List of all speakers
+            all_speakers = (
+                df_new["subtitle_text_split"]
+                .str.extract(SPEAKER_REGEX)[0]
+                .dropna()
+                .str.replace(":", "", regex=False)
+                .str.strip()
+                .unique()
+            )
+
+            # Remove blocked speakers to create clean list
+            clean_speakers = [
+                s for s in all_speakers
+                if s.lower() not in BLOCKED_SPEAKERS
+            ]
+
+            # function to remove speaker text together with :
+            def remove_real_speaker_prefix(text):
+                for sp in clean_speakers:
+                    prefix = sp + ":"
+                    if text.startswith(prefix):
+                        return text[len(prefix):].strip()
+                return text  # leave blocked speakers untouched
 
             # Clean subtitle text
             df_new["line_text"] = (
@@ -68,7 +123,7 @@ with tab1:
                 .str.replace('"', "", regex=False)
                 .str.replace("\r", "", regex=False)
                 .str.strip()
-                .str.replace(SPEAKER_REGEX, "", regex=True)
+                .apply(remove_real_speaker_prefix)
             )
 
             # -------------------------------
@@ -196,9 +251,7 @@ with tab1:
             # -------------------------------
             df_final["Index"] = range(1, len(df_final) + 1)
 
-            df_final["Word Count"] = df_final["Subtitle Text"].str.replace(
-                r"^[A-Z][a-zA-Z]+:\s*", "", regex=True
-            ).str.split().str.len()
+            df_final["Word Count"] = ""
 
             # -------------------------------
             # 6. Reorder columns
@@ -226,17 +279,46 @@ with tab1:
         # -------------------------------
         # 7. Prepare Excel download
         # -------------------------------
-        excel_file_name = f"{base_name}-processed.xlsx"
-        df_final.to_excel(excel_file_name, index=False, engine="openpyxl")
-        with open(excel_file_name, "rb") as f:
-            excel_data = f.read()
+        from io import BytesIO
+        from openpyxl import load_workbook
 
+        excel_file_name = f"{base_name}-processed.xlsx"
+
+        buffer = BytesIO()
+
+        # write dataframe
+        df_final.to_excel(buffer, index=False, engine="openpyxl")
+        buffer.seek(0)
+
+        # open workbook from memory
+        wb = load_workbook(buffer)
+        ws = wb.active
+
+        wb.calculation.fullCalcOnLoad = True
+
+        # insert formulas
+        for row in range(2, len(df_final) + 2):
+            ws[f"G{row}"].value = (
+                f'=IF(TRIM(C{row})="",0,'
+                f'LEN(TRIM(C{row}))-LEN(SUBSTITUTE(TRIM(C{row})," ",""))+1'
+                f'-IF(B{row}=B{row - 1},0,'
+                f'LEN(TRIM(B{row}))-LEN(SUBSTITUTE(TRIM(B{row})," ",""))+1)'
+                f')'
+            )
+
+        # save back to memory
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        # download correct buffer
         st.download_button(
             label="Download Excel",
-            data=excel_data,
+            data=output,
             file_name=excel_file_name,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
 
         # -------------------------------
         # 8. Prepare SRT download
@@ -255,19 +337,13 @@ with tab1:
                 milliseconds = total_ms % 1000
                 return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
 
-
-        # Group by identical timestamps and join text with newline
-        srt_groups = (
-            df_final
-            .groupby(["Start Time", "End Time"], sort=True)
-            .agg({"Subtitle Text": lambda x: "\n".join(x)})
-            .reset_index()
-        )
+        print(df_final.columns.tolist())
+        print(next(df_final.itertuples()))
 
         srt_lines = []
-        for i, row in enumerate(srt_groups.itertuples(), 1):
-            start = format_srt_time(row._1)  # Start Time
-            end = format_srt_time(row._2)  # End Time
+        for i, row in enumerate(df_final.itertuples(), 1):
+            start = format_srt_time(row._4)  # Start Time
+            end = format_srt_time(row._5)  # End Time
             text = row._3  # Subtitle Text
             srt_lines.append(f"{i}\n{start} --> {end}\n{text}\n\n")
 
@@ -328,7 +404,7 @@ with tab2:
             # -------------------------------
             # Prepare Excel download
             # -------------------------------
-            excel_file_name = f"{base_name}-processed.xlsx"
+            excel_file_name = f"{base_name}-updated.xlsx"
             df_new.to_excel(excel_file_name, index=False, engine="openpyxl")
             with open(excel_file_name, "rb") as f:
                 excel_data = f.read()
