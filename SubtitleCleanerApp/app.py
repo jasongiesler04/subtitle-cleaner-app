@@ -16,7 +16,24 @@ with tab1:
     # -------------------------------------------------
     # Regex patterns
     # -------------------------------------------------
-    SPEAKER_REGEX = r"([A-Z][a-zA-Z0-9]*(?:\s+[A-Z][a-zA-Z0-9]*)*):"
+    SPEAKER_REGEX = r"([A-Z][^\s:]*?(?:\s+[A-Za-z0-9'’\-]+)*):"
+    STOPWORDS = {
+        "because", "remember", "what", "where", "when", "why", "how",
+        "this", "that", "these", "those", "if", "then", "but", "and", "or",
+        "um", "uh", "erm", "hmm", "so"
+    }
+
+    def looks_like_character(name):
+        if not isinstance(name, str):
+            return False
+
+        # Remove punctuation so "Um...update" becomes "um update"
+        cleaned = re.sub(r"[^\w\s]", " ", name.lower())
+        words = cleaned.split()
+
+        return not any(w in STOPWORDS for w in words)
+
+
     SENTENCE_SPLIT_REGEX = r'(?:\n|(?<=[.!?])\s+)'
     SENTENCE_REGEX = re.compile(r".*?[.!?](?:['\"\)\]]*)(?=\s|$)")
 
@@ -76,6 +93,11 @@ with tab1:
 
             # Extract speaker
             df_new["Character"] = df_new["subtitle_text_split"].str.extract(SPEAKER_REGEX)
+
+            # Apply stop words to remove non-speakers
+            df_new["Character"] = df_new["Character"].apply(
+                lambda x: x if x and looks_like_character(x) else None
+            )
 
             # Clean extracted speaker names
             df_new["Character"] = (
