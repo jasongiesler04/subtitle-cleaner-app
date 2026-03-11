@@ -20,7 +20,7 @@ with tab1:
     STOPWORDS = {
         "because", "remember", "what", "where", "when", "why", "how",
         "this", "that", "these", "those", "if", "then", "but", "and", "or",
-        "um", "uh", "erm", "hmm", "so"
+        "um", "uh", "erm", "hmm", "so", "now", "we"
     }
 
     def looks_like_character(name):
@@ -31,7 +31,15 @@ with tab1:
         cleaned = re.sub(r"[^\w\s]", " ", name.lower())
         words = cleaned.split()
 
-        return not any(w in STOPWORDS for w in words)
+        # Reject if any stopword appears
+        if any(w in STOPWORDS for w in words):
+            return False
+
+        # Reject if more than 3 words
+        if len(words) > 3:
+            return False
+
+        return True
 
 
     SENTENCE_SPLIT_REGEX = r'(?:\n|(?<=[.!?])\s+)'
@@ -43,6 +51,7 @@ with tab1:
     BLOCKED_SPEAKERS = {
         "whispers",
         "sings",
+        "sing",
         "remember",
         "raps",
         "impersonating",
