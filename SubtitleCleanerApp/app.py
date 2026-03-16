@@ -16,11 +16,12 @@ with tab1:
     # -------------------------------------------------
     # Regex patterns
     # -------------------------------------------------
-    SPEAKER_REGEX = r"([A-Z][^\s:]*?(?:\s+[A-Za-z0-9'’\-]+)*):"
+    SPEAKER_REGEX = r"([A-Z][^\s:]*?(?:\s+[A-Za-z0-9'’\-&]+)*):"
     STOPWORDS = {
         "because", "remember", "what", "where", "when", "why", "how",
         "this", "that", "these", "those", "if", "then", "but", "and", "or",
-        "um", "uh", "erm", "hmm", "so", "now", "we"
+        "um", "uh", "erm", "hmm", "so", "now", "we", "oh", "i", "i'm", "it",
+        "said"
     }
 
     def looks_like_character(name):
