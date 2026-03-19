@@ -221,8 +221,9 @@ if uploaded_file and st.session_state.step == 2:
     )
 
     # Keep only characters from user selection
-    df_new["Character"] = df_new["Character"].apply(
-        lambda x: x if x in clean_characters else None
+    df_new["Character"] = df_new["Character"].where(
+        df_new["Character"].isin(clean_characters),
+        None
     )
 
     # Forward-fill speakers
@@ -231,9 +232,8 @@ if uploaded_file and st.session_state.step == 2:
     # Remove character prefix from text
     def remove_real_character_prefix(text):
         for sp in clean_characters:
-            prefix = sp + ":"
-            if text.startswith(prefix):
-                return text[len(prefix):].strip()
+            if text.startswith(sp + ":"):
+                return text[len(sp) + 1:].strip()
         return text
 
     df_new["line_text"] = (
